@@ -1,0 +1,63 @@
+void orderInsert(Data *data)
+{
+  //il faut commancer par le fork  pour que dans tous les cas le pere attend une rep de worker
+    TRACE0("[master] ordre insertion\n");
+    myassert(data != NULL, "il faut l'environnement d'exécution");
+    //TODO
+    int ret ;
+    float elt;
+    // - recevoir l'élément à insérer en provenance du client
+    data->fd_client_master=open(CLIENT_MASTER ,O_RDONLY);
+    assert(data->fd_client_master != -1) ; 
+    ret = read(data->fd_client_master,&elt, sizeof(float)) ; 
+    ret=close(data->fd_client_master); 
+    assert(ret != -1); 
+    char *char_elt = strFormat_of_float(elt); // pour allouer la taille exacte
+    pid_t retFork , retWait;
+    retFork = fork();
+    assert(retFork != -1) ;
+    if(retFork == 0 ){//fils
+      if(data->is_empty){//ensemble vide
+      char * argv[5];
+      argv[0] = WORKER ; 
+      argv[1] =  char_elt;
+      int fdIn  = data->fd_worker1_master[1]; // le tube dans le quelle le worker il ecrit
+      int fdOut =data->fd_master_worker1[0];  // le tube dans le quelle le worker il lit 
+      int fdToMaster = data->fd_workers_master[1];
+      char *char_fdIn =strFormat_of_int(fdIn);
+      char *char_fdOut =strFormat_of_int(fdOut); 
+      char * char_fdToMaster=strFormat_of_int(fdToMaster);
+      argv[2] = char_fdIn  ;
+      argv[3] = char_fdOut ;
+      argv[4] = char_fdToMaster ;
+      argv[5]= NULL;
+      execv(argv[0] , argv);
+      }
+      else{//ensemble n'est pas vide 
+        int order = CM_ORDER_INSERT ;
+        ret = write(data->fd_master_worker1[1],&order,sizeof(int));
+        assert(ret != -1 ); 
+        ret = write(data->fd_master_worker1[1],&elt,sizeof(float)) ;
+        assert(ret  != -1);
+      }
+    }else{//pere
+        int ack ; 
+        retWait=wait(NULL);
+        assert(retWait != -1);
+         // - recevoir accusé de réception venant du worker concerné (cf. master_worker.h)
+        ret = read(data->fd_workers_master[0],&ack , sizeof(int));
+        assert(ret != -1 );
+        if(ack == MW_ANSWER_INSERT) {
+          data->fd_master_client = open(MASTER_CLIENT,O_WRONLY);
+          assert(data->fd_master_client != -1 );
+          ack =CM_ANSWER_INSERT_OK ;
+          //envoyer l'accusé de réception au client (cf. client_master.h)
+          ret = write(data->fd_master_client , &ack,sizeof(int));
+          assert(ret != -1);
+          close(data->fd_master_client); 
+          data->is_empty = false ; 
+        }
+        
+    }
+
+}
